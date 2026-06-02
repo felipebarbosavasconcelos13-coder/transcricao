@@ -1,0 +1,138 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary-50: hsl(245, 100%, 98%);
+  --color-primary-100: hsl(245, 100%, 96%);
+  --color-primary-200: hsl(245, 95%, 90%);
+  --color-primary-300: hsl(245, 90%, 82%);
+  --color-primary-400: hsl(245, 85%, 72%);
+  --color-primary-500: hsl(245, 75%, 63%); /* #6C5CE7 */
+  --color-primary-600: hsl(245, 68%, 55%);
+  --color-primary-700: hsl(245, 65%, 45%);
+  --color-primary-800: hsl(245, 65%, 35%);
+  --color-primary-900: hsl(245, 65%, 20%);
+
+  --color-secondary-50: hsl(172, 100%, 97%);
+  --color-secondary-100: hsl(172, 100%, 92%);
+  --color-secondary-200: hsl(172, 95%, 82%);
+  --color-secondary-300: hsl(172, 85%, 70%);
+  --color-secondary-400: hsl(172, 80%, 55%);
+  --color-secondary-500: hsl(172, 100%, 38%); /* #00C2A8 */
+  --color-secondary-600: hsl(172, 100%, 30%);
+  --color-secondary-700: hsl(172, 100%, 22%);
+
+  --color-neutral-50: hsl(210, 40%, 98%); /* #F7F9FC */
+  --color-neutral-100: hsl(210, 40%, 96%);
+  --color-neutral-200: hsl(210, 30%, 90%);
+  --color-neutral-300: hsl(210, 20%, 80%);
+  --color-neutral-400: hsl(210, 14%, 66%);
+  --color-neutral-500: hsl(210, 10%, 50%);
+  --color-neutral-600: hsl(210, 10%, 40%);
+  --color-neutral-700: hsl(220, 14%, 25%);
+  --color-neutral-800: hsl(220, 15%, 16%);
+  --color-neutral-900: hsl(220, 15%, 10%); /* #111827 */
+
+  --color-danger-500: hsl(0, 84%, 60%); /* #EF4444 */
+  --color-danger-600: hsl(0, 84%, 50%);
+
+  --animate-glow: glow 2s infinite ease-in-out;
+  --animate-shimmer: shimmer 2.5s infinite linear;
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+@keyframes glow {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(108, 92, 231, 0.2), 0 0 12px rgba(108, 92, 231, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(108, 92, 231, 0.5), 0 0 24px rgba(108, 92, 231, 0.25);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Custom Base Styles */
+:root {
+  --background: #F7F9FC;
+  --foreground: #111827;
+  color-scheme: light;
+}
+
+.dark {
+  --background: #0B0F19;
+  --foreground: #F7F9FC;
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  transition: background-color 0.3s ease, color 0.3s ease;
+  overflow-x: hidden;
+}
+
+/* Glassmorphism utility */
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.dark .glass {
+  background: rgba(15, 22, 38, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Shimmer load effect */
+.shimmer-bg {
+  background: linear-gradient(90deg, 
+    var(--color-neutral-100) 25%, 
+    var(--color-neutral-200) 50%, 
+    var(--color-neutral-100) 75%
+  );
+  background-size: 200% 100%;
+}
+
+.dark .shimmer-bg {
+  background: linear-gradient(90deg, 
+    var(--color-neutral-800) 25%, 
+    var(--color-neutral-700) 50%, 
+    var(--color-neutral-800) 75%
+  );
+  background-size: 200% 100%;
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-neutral-300);
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: var(--color-neutral-700);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-neutral-400);
+}
