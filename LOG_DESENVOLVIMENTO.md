@@ -159,6 +159,18 @@ Este arquivo registra todas as alterações, inicializações e modificações r
   - Correção de pendências do Git e envio (push) das alterações para o repositório remoto.
 - **Status:** Compilado e sincronizado com sucesso no repositório remoto.
 
+### [2026-06-02] - Reestruturação do Fluxo de Configurações em Etapas e Validação de Banco
+
+- **Tarefa:** Criar fluxo assistido de onboarding/configuração em etapas para evitar falhas silenciosas de banco remoto Supabase e refinar o salvamento de IA.
+- **Modificações:**
+  - Criação do endpoint `/api/settings/validate-supabase/route.ts` para validar conexões e testar a existência das tabelas (`jobs`, `transcripts`, `comments`) no Supabase remoto do usuário. Caso as tabelas não existam, o endpoint lê e retorna o script SQL de criação.
+  - Substituição da página de configurações em [app/settings/page.tsx](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/settings/page.tsx) por um fluxo guiado por Stepper em duas etapas:
+    - **Etapa 1: Banco de Dados:** Exibe os campos de URL e Anon Key do Supabase, executa testes de conexão com feedback visual premium, e se faltarem tabelas no projeto remoto, exibe um painel de atenção contendo as instruções e o script SQL para cópia rápida. Disponibiliza botão para avançar ou para continuar em modo simulado (Mock local).
+    - **Etapa 2: Inteligência Artificial:** Escolha do motor de transcrição (OpenAI Whisper v3 ou DeepSeek ASR), exibindo condicionalmente o campo para a chave de API ativa correspondente à IA escolhida (OpenAI Key ou DeepSeek Key) e idioma padrão.
+  - Sincronização dos arquivos no Git e push para o repositório remoto.
+- **Status:** Testado, compilado e sincronizado com sucesso no repositório remoto.
+
+
 
 
 

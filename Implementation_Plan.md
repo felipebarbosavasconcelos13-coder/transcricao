@@ -1,28 +1,30 @@
-# Plano de Implementação - Suporte Completo ao DeepSeek ASR
+# Plano de Implementação - Configuração em Etapas e Validação de Banco de Dados
 
-Este documento detalha o planejamento para integrar o suporte ao modelo **DeepSeek ASR** no backend (worker de processamento) e garantir que o usuário veja e configure a API Key do DeepSeek na interface.
+Este plano de implementação visa reestruturar a interface e fluxo de **Configurações do Sistema**, transformando-a em um fluxo em duas etapas (Supabase / Banco Local -> Configurações de IA) com assistente de inicialização e script SQL automatizado para o banco remoto do usuário.
 
 ---
 
 ## 📅 Ações de Desenvolvimento
 
-1. **Ajustar o Worker de Transcrição:**
-   * Modificar [lib/worker.ts](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/lib/worker.ts) para ler a preferência de modelo (`model`) do sistema a partir de `getSystemSettings()`.
-   * Se o modelo configurado for `"deepseek-asr"`, executar a transcrição sob a chave da API do DeepSeek (usando o helper `getDeepseekApiKey()`), logando a operação no backend ou simulando a resposta em caso de chave ausente.
+1. **Endpoint de Validação do Supabase:**
+   * Criar a rota de API [app/api/settings/validate-supabase/route.ts](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/api/settings/validate-supabase/route.ts) que recebe as credenciais do Supabase, testa a conexão de dados, detecta se as tabelas existem (erro `42P01`) e retorna o script SQL [supabase/schema.sql](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/supabase/schema.sql) se necessário.
 
-2. **Compilação e Verificação:**
-   * Executar `npm run build` na pasta raiz para testar integridade de tipos e evitar problemas de deploy ou execução local.
+2. **Refatoração da Interface em Etapas (Stepper):**
+   * Reescrever a UI em [app/settings/page.tsx](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/settings/page.tsx) com as seguintes etapas:
+     * **Etapa 1: Banco de Dados:** Configuração do Supabase ou Mock local. Se a conexão com o Supabase for feita mas faltarem tabelas, o app exibe um card com o script SQL de tabelas e um botão "Copiar SQL" para que o usuário execute no editor SQL do Supabase.
+     * **Etapa 2: Preferências de IA:** Seleção do motor de IA (OpenAI Whisper v3 ou DeepSeek ASR), campo condicional para a chave correspondente e idioma padrão.
+   * Ao finalizar, persistir todas as informações de forma centralizada no backend.
 
-3. **Publicação no GitHub:**
-   * Adicionar todos os arquivos modificados ao Git.
-   * Commitar as alterações e fazer o push para o repositório remoto: `https://github.com/felipebarbosavasconcelos13-coder/transcricao.git`.
+3. **Verificação de Compilação:**
+   * Executar `npm run build` para certificar que as tipagens e caminhos de importação estão totalmente conformes com o Next.js 16.
 
-4. **Registro no Log de Desenvolvimento:**
-   * Adicionar detalhes da alteração no arquivo [LOG_DESENVOLVIMENTO.md](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/LOG_DESENVOLVIMENTO.md).
+4. **Sincronização:**
+   * Publicar as mudanças no repositório GitHub.
 
 ---
 
 ## 🧪 Plano de Verificação
 
-* **Interface Visual:** Acessar [http://localhost:3000/settings](http://localhost:3000/settings) e realizar um recarregamento forçado (F5) para validar a exibição do input **DeepSeek API Key (ASR)** e o status correspondente.
-* **Execução do Job:** Criar um trabalho de transcrição com o modelo DeepSeek ativo, validar no console do backend o log indicando o uso do DeepSeek ASR.
+* **Validação de Erros:** Tentar conectar no Supabase com credenciais inválidas.
+* **Validação de Tabelas Ausentes:** Tentar conectar no Supabase usando um projeto novo (vazio), validando a exibição do script SQL e instruções de criação de tabelas.
+* **Persistência de IA:** Selecionar o motor, salvar e confirmar que as chaves de API da OpenAI ou DeepSeek permanecem salvas localmente no `temp_db.json`.
