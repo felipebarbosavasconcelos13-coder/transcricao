@@ -1,30 +1,25 @@
-# Plano de Implementação - Configuração em Etapas e Validação de Banco de Dados
+# Plano de Implementação - Correção na Detecção de Tabelas Ausentes (Supabase)
 
-Este plano de implementação visa reestruturar a interface e fluxo de **Configurações do Sistema**, transformando-a em um fluxo em duas etapas (Supabase / Banco Local -> Configurações de IA) com assistente de inicialização e script SQL automatizado para o banco remoto do usuário.
+Este plano detalha o ajuste na API de validação do banco de dados remoto para capturar erros de schema cache do Supabase (código `PGRST205`) e liberar o assistente de script SQL para o usuário.
 
 ---
 
 ## 📅 Ações de Desenvolvimento
 
-1. **Endpoint de Validação do Supabase:**
-   * Criar a rota de API [app/api/settings/validate-supabase/route.ts](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/api/settings/validate-supabase/route.ts) que recebe as credenciais do Supabase, testa a conexão de dados, detecta se as tabelas existem (erro `42P01`) e retorna o script SQL [supabase/schema.sql](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/supabase/schema.sql) se necessário.
+1. **Ajustar Endpoint de Validação:**
+   * Modificar [app/api/settings/validate-supabase/route.ts](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/api/settings/validate-supabase/route.ts) para capturar o código de erro `PGRST205` ou o texto `"Could not find the table"` e classificar como tabelas ausentes (`tablesExist: false`), retornando o script SQL de criação.
 
-2. **Refatoração da Interface em Etapas (Stepper):**
-   * Reescrever a UI em [app/settings/page.tsx](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/settings/page.tsx) com as seguintes etapas:
-     * **Etapa 1: Banco de Dados:** Configuração do Supabase ou Mock local. Se a conexão com o Supabase for feita mas faltarem tabelas, o app exibe um card com o script SQL de tabelas e um botão "Copiar SQL" para que o usuário execute no editor SQL do Supabase.
-     * **Etapa 2: Preferências de IA:** Seleção do motor de IA (OpenAI Whisper v3 ou DeepSeek ASR), campo condicional para a chave correspondente e idioma padrão.
-   * Ao finalizar, persistir todas as informações de forma centralizada no backend.
+2. **Verificação de Compilação:**
+   * Executar `npm run build` na pasta raiz.
 
-3. **Verificação de Compilação:**
-   * Executar `npm run build` para certificar que as tipagens e caminhos de importação estão totalmente conformes com o Next.js 16.
+3. **Sincronização:**
+   * Comitar as alterações e fazer push para o repositório remoto.
 
-4. **Sincronização:**
-   * Publicar as mudanças no repositório GitHub.
+4. **Log de Desenvolvimento:**
+   * Atualizar [LOG_DESENVOLVIMENTO.md](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/LOG_DESENVOLVIMENTO.md).
 
 ---
 
 ## 🧪 Plano de Verificação
 
-* **Validação de Erros:** Tentar conectar no Supabase com credenciais inválidas.
-* **Validação de Tabelas Ausentes:** Tentar conectar no Supabase usando um projeto novo (vazio), validando a exibição do script SQL e instruções de criação de tabelas.
-* **Persistência de IA:** Selecionar o motor, salvar e confirmar que as chaves de API da OpenAI ou DeepSeek permanecem salvas localmente no `temp_db.json`.
+* Clicar em **Validar Banco de Dados** com o Supabase atual (que não possui as tabelas) e certificar que o painel amarelo de script SQL abre com as instruções.

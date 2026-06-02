@@ -170,6 +170,15 @@ Este arquivo registra todas as alterações, inicializações e modificações r
   - Sincronização dos arquivos no Git e push para o repositório remoto.
 - **Status:** Testado, compilado e sincronizado com sucesso no repositório remoto.
 
+### [2026-06-02] - Correção na Detecção de Tabelas Ausentes no Supabase Remoto
+
+- **Tarefa:** Corrigir a validação de banco para detectar erros de cache de schema do Supabase (como `PGRST205` e mensagens de tabela não encontrada).
+- **Modificações:**
+  - Ajuste do arquivo [app/api/settings/validate-supabase/route.ts](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/api/settings/validate-supabase/route.ts) para capturar o código de erro do PostgREST `PGRST205` e frases como `"Could not find the table"` ou `"schema cache"`.
+  - Configuração do Git e envio (push) das correções para o repositório GitHub.
+- **Status:** Compilado e sincronizado com sucesso no repositório remoto.
+
+
 
 
 

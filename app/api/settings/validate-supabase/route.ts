@@ -26,7 +26,12 @@ export async function POST(req: NextRequest) {
         console.warn(`[VALIDATION API] Erro na consulta de teste do Supabase:`, error);
         
         const errorMsg = error.message || "";
-        const isTableMissing = errorMsg.includes("does not exist") || error.code === "42P01";
+        const isTableMissing = 
+          errorMsg.includes("does not exist") || 
+          errorMsg.includes("Could not find the table") || 
+          errorMsg.includes("schema cache") ||
+          error.code === "42P01" || 
+          error.code === "PGRST205";
 
         if (isTableMissing) {
           // A conexão deu certo, mas a tabela 'jobs' (e muito provavelmente as outras) está ausente
