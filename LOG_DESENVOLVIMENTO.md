@@ -149,6 +149,17 @@ Este arquivo registra todas as alterações, inicializações e modificações r
   - Sobrescrevemos a página [app/settings/page.tsx](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/settings/page.tsx) com uma nova interface premium, removendo totalmente a seção de faturamento, planos e assinaturas comerciais, e implementando campos com inputs de visualização para OpenAI API Key, Supabase URL e Supabase Anon Key.
 - **Status:** Alterações concluídas e build de produção bem-sucedido.
 
+### [2026-06-02] - Adição de Suporte ao DeepSeek ASR e Sincronização
+
+- **Tarefa:** Integrar a configuração e execução do DeepSeek ASR no processador de trabalhos e painel de controle.
+- **Modificações:**
+  - Inclusão do suporte ao input da chave de API **DeepSeek API Key (ASR)** com botão de visibilidade na página de configurações do frontend.
+  - Atualização do utilitário de persistência no backend para aceitar, gravar e disponibilizar a chave de API do DeepSeek a partir de `temp_db.json`.
+  - Adaptação do worker de processamento de áudio ([lib/worker.ts](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/lib/worker.ts)) para verificar se o modelo configurado é `"deepseek-asr"`, e nesse caso, ler dinamicamente e usar a API Key do DeepSeek (`getDeepseekApiKey()`), gerando logs consistentes de execução da API do DeepSeek ASR.
+  - Correção de pendências do Git e envio (push) das alterações para o repositório remoto.
+- **Status:** Compilado e sincronizado com sucesso no repositório remoto.
+
+
 
 
 

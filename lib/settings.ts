@@ -5,20 +5,35 @@ const MOCK_DB_PATH = path.join(process.cwd(), "temp_db.json");
 
 export interface SystemSettings {
   openai_api_key: string;
+  deepseek_api_key: string;
   supabase_url: string;
   supabase_anon_key: string;
+  model: string;
+  language: string;
 }
+
+const DEFAULT_SETTINGS: SystemSettings = {
+  openai_api_key: "",
+  deepseek_api_key: "",
+  supabase_url: "",
+  supabase_anon_key: "",
+  model: "whisper-1",
+  language: "pt"
+};
 
 export function getSystemSettings(): SystemSettings {
   try {
     if (!fs.existsSync(MOCK_DB_PATH)) {
-      return { openai_api_key: "", supabase_url: "", supabase_anon_key: "" };
+      return DEFAULT_SETTINGS;
     }
     const content = fs.readFileSync(MOCK_DB_PATH, "utf8");
     const db = JSON.parse(content);
-    return db.settings || { openai_api_key: "", supabase_url: "", supabase_anon_key: "" };
+    return {
+      ...DEFAULT_SETTINGS,
+      ...(db.settings || {})
+    };
   } catch (e) {
-    return { openai_api_key: "", supabase_url: "", supabase_anon_key: "" };
+    return DEFAULT_SETTINGS;
   }
 }
 
@@ -39,6 +54,11 @@ export function saveSystemSettings(settings: SystemSettings) {
 export function getOpenaiApiKey(): string {
   const settings = getSystemSettings();
   return settings.openai_api_key || process.env.OPENAI_API_KEY || "";
+}
+
+export function getDeepseekApiKey(): string {
+  const settings = getSystemSettings();
+  return settings.deepseek_api_key || "";
 }
 
 export function getSupabaseUrl(): string {

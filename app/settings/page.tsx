@@ -25,11 +25,13 @@ export default function SettingsPage() {
 
   // Ajustes de API / Credenciais
   const [openaiKey, setOpenaiKey] = useState("");
+  const [deepseekKey, setDeepseekKey] = useState("");
   const [supabaseUrl, setSupabaseUrl] = useState("");
   const [supabaseAnonKey, setSupabaseAnonKey] = useState("");
 
   // Visibilidade de Senhas
   const [showOpenaiKey, setShowOpenaiKey] = useState(false);
+  const [showDeepseekKey, setShowDeepseekKey] = useState(false);
   const [showSupabaseAnonKey, setShowSupabaseAnonKey] = useState(false);
 
   // Status de UI
@@ -46,8 +48,11 @@ export default function SettingsPage() {
         const json = await res.json();
         if (json.success && json.data) {
           setOpenaiKey(json.data.openai_api_key || "");
+          setDeepseekKey(json.data.deepseek_api_key || "");
           setSupabaseUrl(json.data.supabase_url || "");
           setSupabaseAnonKey(json.data.supabase_anon_key || "");
+          setModel(json.data.model || "whisper-1");
+          setLanguage(json.data.language || "pt");
         }
       } catch (e) {
         console.error("Erro ao carregar configurações:", e);
@@ -71,15 +76,17 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           openai_api_key: openaiKey,
+          deepseek_api_key: deepseekKey,
           supabase_url: supabaseUrl,
-          supabase_anon_key: supabaseAnonKey
+          supabase_anon_key: supabaseAnonKey,
+          model,
+          language
         })
       });
 
       const json = await res.json();
       if (json.success) {
         setSaveStatus("success");
-        // Forçar reload das variáveis de ambiente na aba atual
         setTimeout(() => setSaveStatus(null), 4000);
       } else {
         setSaveStatus("error");
@@ -105,7 +112,7 @@ export default function SettingsPage() {
           Configurações do Sistema
         </h1>
         <p className="font-sans text-neutral-500 dark:text-neutral-400 mt-2 text-sm">
-          Gerencie as credenciais da API da OpenAI, chaves do banco de dados Supabase e as preferências do motor de inteligência artificial.
+          Gerencie as credenciais da API da OpenAI, DeepSeek, chaves do banco de dados Supabase e as preferências de processamento de áudio.
         </p>
       </div>
 
@@ -200,12 +207,24 @@ export default function SettingsPage() {
                 {openaiKey ? (
                   <div className="flex items-center gap-2 p-2.5 bg-emerald-500/10 text-emerald-500 rounded-xl">
                     <Check size={14} className="shrink-0" />
-                    <span className="font-sans text-[11px] font-bold">OpenAI API Key Configurada</span>
+                    <span className="font-sans text-[11px] font-bold">OpenAI API Key Ativa</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 p-2.5 bg-amber-500/10 text-amber-500 rounded-xl">
                     <Info size={14} className="shrink-0" />
-                    <span className="font-sans text-[11px] font-bold">Chave OpenAI Ausente (Simulação)</span>
+                    <span className="font-sans text-[11px] font-bold">OpenAI Key Ausente (Mock)</span>
+                  </div>
+                )}
+
+                {deepseekKey ? (
+                  <div className="flex items-center gap-2 p-2.5 bg-emerald-500/10 text-emerald-500 rounded-xl">
+                    <Check size={14} className="shrink-0" />
+                    <span className="font-sans text-[11px] font-bold">DeepSeek API Key Ativa</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 p-2.5 bg-amber-500/10 text-amber-500 rounded-xl">
+                    <Info size={14} className="shrink-0" />
+                    <span className="font-sans text-[11px] font-bold">DeepSeek Key Ausente (Mock)</span>
                   </div>
                 )}
               </div>
@@ -226,7 +245,7 @@ export default function SettingsPage() {
                     Credenciais e Conectividade
                   </h2>
                   <p className="font-sans text-xs text-neutral-400">
-                    Insira suas chaves privadas para conectar o aplicativo diretamente aos seus serviços pessoais.
+                    Configure os tokens de autenticação para as IAs e conecte o Supabase para salvar e persistir os seus vídeos e transcrições.
                   </p>
                 </div>
               </div>
@@ -255,7 +274,34 @@ export default function SettingsPage() {
                     </button>
                   </div>
                   <p className="font-sans text-[10px] text-neutral-400">
-                    Chave necessária para realizar transcrições via Whisper e summarizações com o GPT-4o-mini.
+                    Chave necessária para realizar transcrições via Whisper e resumos com o GPT.
+                  </p>
+                </div>
+
+                {/* DeepSeek API Key */}
+                <div className="space-y-1.5">
+                  <label className="font-sans font-bold text-xs text-neutral-700 dark:text-neutral-350 flex items-center gap-1.5">
+                    <Key size={14} className="text-neutral-400" />
+                    DeepSeek API Key (ASR)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showDeepseekKey ? "text" : "password"}
+                      placeholder="sk-..."
+                      value={deepseekKey}
+                      onChange={(e) => setDeepseekKey(e.target.value)}
+                      className="w-full bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl pl-4 pr-10 py-3 text-xs focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/10 transition-all font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowDeepseekKey(!showDeepseekKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+                    >
+                      {showDeepseekKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  <p className="font-sans text-[10px] text-neutral-400">
+                    Chave de API necessária para processar transcrições se a opção "DeepSeek ASR" estiver ativada.
                   </p>
                 </div>
 
@@ -300,7 +346,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <p className="font-sans text-[10px] text-neutral-400">
-                  O aplicativo usará estas credenciais para persistir dados de jobs, transcrições e mídias de forma segura em seu próprio banco. Se deixadas vazias, o app usará o Mock de armazenamento local (`temp_db.json`).
+                  Se preenchidos, o banco de dados remoto do Supabase será usado. Caso contrário, os dados serão salvos no arquivo local (`temp_db.json`).
                 </p>
               </div>
 
