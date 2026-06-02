@@ -52,20 +52,52 @@ function saveMockDb(db: any) {
   }
 }
 
-// Configuração do Supabase Client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+import { getSupabaseUrl, getSupabaseAnonKey } from "./settings";
 
-const isSupabaseConfigured = supabaseUrl && supabaseAnonKey && 
-  !supabaseUrl.includes("seu_supabase_url") && 
-  !supabaseAnonKey.includes("sua_supabase_key");
+// Variável mutável para live binding do status do mock
+export let isUsingMock = true;
 
-// Exportar o cliente real se configurado
-export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : (createMockSupabaseClient() as any);
+// Cache para o cliente real
+let cachedRealClient: any = null;
+let cachedRealUrl = "";
+let cachedRealKey = "";
 
-export const isUsingMock = !isSupabaseConfigured;
+// Função para retornar o cliente ativo do Supabase (Real ou Mock)
+export function getActiveSupabaseClient() {
+  const url = getSupabaseUrl();
+  const key = getSupabaseAnonKey();
+  
+  const isConfigured = url && key && 
+    !url.includes("seu_supabase_url") && 
+    !key.includes("sua_supabase_key");
+
+  isUsingMock = !isConfigured;
+
+  if (!isConfigured) {
+    return createMockSupabaseClient();
+  }
+
+  if (!cachedRealClient || cachedRealUrl !== url || cachedRealKey !== key) {
+    cachedRealClient = createClient(url, key);
+    cachedRealUrl = url;
+    cachedRealKey = key;
+    console.log("⚡ Supabase Real Client instanciado dinamicamente com sucesso!");
+  }
+
+  return cachedRealClient;
+}
+
+// Proxy dinâmico do Supabase
+export const supabase = new Proxy({} as any, {
+  get(target, prop) {
+    const client = getActiveSupabaseClient();
+    const value = (client as any)[prop];
+    if (typeof value === "function") {
+      return value.bind(client);
+    }
+    return value;
+  }
+});
 
 // Criador de cliente mock com a mesma assinatura básica do Supabase
 function createMockSupabaseClient() {

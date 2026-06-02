@@ -14,9 +14,13 @@ if (ffmpegPath) {
   console.warn("[FFMPEG] Não foi possível encontrar o binário estático do ffmpeg-static.");
 }
 
-// Inicializar cliente OpenAI se a chave estiver configurada
-const openaiApiKey = process.env.OPENAI_API_KEY || "";
-const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
+import { getOpenaiApiKey } from "./settings";
+
+// Inicializar cliente OpenAI dinamicamente com suporte a configurações em tempo de execução
+function getOpenaiClient() {
+  const key = getOpenaiApiKey();
+  return key ? new OpenAI({ apiKey: key }) : null;
+}
 
 // Função principal de processamento de Jobs
 export async function processJob(jobId: string) {
@@ -122,10 +126,11 @@ export async function processJob(jobId: string) {
     await updateJobStatus(jobId, "transcribing", 70);
     
     let transcriptionResult: { text: string; segments: any[] };
+    const openaiClient = getOpenaiClient();
 
-    if (openai) {
+    if (openaiClient) {
       console.log(`[WORKER] Enviando áudio para OpenAI Whisper API...`);
-      transcriptionResult = await transcribeWithWhisper(tempAudioPath);
+      transcriptionResult = await transcribeWithWhisper(tempAudioPath, openaiClient);
     } else {
       console.log(`[WORKER] OpenAI API Key não configurada. Simulando transcrição realista...`);
       const duration = actualDuration || 60; // fallback se for 0
@@ -294,15 +299,15 @@ function getAudioDuration(filePath: string): Promise<number> {
 }
 
 // Realiza a transcrição real na API do Whisper
-async function transcribeWithWhisper(audioPath: string): Promise<{ text: string; segments: any[] }> {
-  if (!openai) {
+async function transcribeWithWhisper(audioPath: string, openaiClient: OpenAI): Promise<{ text: string; segments: any[] }> {
+  if (!openaiClient) {
     throw new Error("Cliente OpenAI não inicializado");
   }
 
   const fileStream = fs.createReadStream(audioPath);
   
   // Chamada da API de transcrição Whisper com suporte a segmentos detalhados
-  const response = await openai.audio.transcriptions.create({
+  const response = await openaiClient.audio.transcriptions.create({
     file: fileStream,
     model: "whisper-1",
     response_format: "verbose_json",

@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 import { OpenAI } from "openai";
 
-const openaiApiKey = process.env.OPENAI_API_KEY || "";
-const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
+import { getOpenaiApiKey } from "@/lib/settings";
 
 export async function POST(
   req: NextRequest,
@@ -11,6 +10,8 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
+    const openaiApiKey = getOpenaiApiKey();
+    const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
 
     // 1. Buscar a transcrição bruta do Job
     const { data: transcript, error: transError } = await supabase

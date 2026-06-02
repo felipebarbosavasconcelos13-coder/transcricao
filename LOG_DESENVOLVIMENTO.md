@@ -127,4 +127,28 @@ Este arquivo registra todas as alterações, inicializações e modificações r
   - Execução bem-sucedida do build de produção (`npm run build`) sem erros de compilação ou de tipos.
 - **Status:** Etapa 10 concluída com sucesso. Todo o projeto está verificado, consolidado e finalizado!
 
+### [2026-06-02] - Integração do Controle de Versões e Push para GitHub
+
+- **Tarefa:** Inicializar o Git localmente e fazer o push de todo o código-fonte desenvolvido para o repositório remoto.
+- **Modificações:**
+  - Inicialização do repositório Git local na pasta raiz.
+  - Indexação de todos os arquivos de código-fonte respeitando as exclusões do [.gitignore](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/.gitignore).
+  - Criação do commit inicial `"feat: implementacao completa do Atigra Trans"`.
+  - Configuração do repositório remoto `https://github.com/felipebarbosavasconcelos13-coder/transcricao.git` como upstream `origin/main`.
+  - Execução bem-sucedida do comando de envio (`git push -u origin main`).
+- **Status:** Push realizado com sucesso. O código completo está disponível no repositório remoto.
+
+### [2026-06-02] - Reformulação das Configurações do Sistema e Credenciais Dinâmicas
+
+- **Tarefa:** Remover planos comerciais e adicionar suporte para salvar chaves de API OpenAI e credenciais Supabase dinamicamente no servidor.
+- **Modificações:**
+  - Criação do utilitário [lib/settings.ts](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/lib/settings.ts) para ler e persistir credenciais locais em `temp_db.json`.
+  - Desenvolvimento da API de configurações [app/api/settings/route.ts](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/api/settings/route.ts) para leitura e escrita das configurações no backend.
+  - Atualização do cliente [lib/supabaseClient.ts](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/lib/supabaseClient.ts) para instanciar dinamicamente o cliente do Supabase Real (se as credenciais estiverem preenchidas) ou usar o Mock (se vazias) em tempo de execução via Proxy dinâmico, sem necessidade de reiniciar a aplicação.
+  - Atualização do motor de processamento [lib/worker.ts](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/lib/worker.ts) e do endpoint de pós-processamento de IA [app/api/jobs/[id]/process-ia/route.ts](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/api/jobs/[id]/process-ia/route.ts) para ler e aplicar a chave da API OpenAI dinamicamente.
+  - Sobrescrevemos a página [app/settings/page.tsx](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/settings/page.tsx) com uma nova interface premium, removendo totalmente a seção de faturamento, planos e assinaturas comerciais, e implementando campos com inputs de visualização para OpenAI API Key, Supabase URL e Supabase Anon Key.
+- **Status:** Alterações concluídas e build de produção bem-sucedido.
+
+
+
 
