@@ -178,6 +178,17 @@ Este arquivo registra todas as alterações, inicializações e modificações r
   - Configuração do Git e envio (push) das correções para o repositório GitHub.
 - **Status:** Compilado e sincronizado com sucesso no repositório remoto.
 
+### [2026-06-02] - Correção do F5 e Salvamento Imediato de Configurações de Banco
+
+- **Tarefa:** Resolver o problema de perda de dados digitados nas etapas do assistente ao recarregar a tela (F5) e corrigir a inicialização silenciosa.
+- **Modificações:**
+  - Atualização de [app/api/settings/route.ts](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/api/settings/route.ts) para realizar merge inteligente de dados no POST, evitando que o envio de chaves de banco limpe as de IA e vice-versa.
+  - Refatoração de [app/settings/page.tsx](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/settings/page.tsx) para salvar imediatamente as credenciais do Supabase no backend assim que a conexão física é validada com sucesso, ou quando o usuário clica em "Usar Banco de Dados Local".
+  - Correção na validação inicial silenciosa do `useEffect` de carregamento para salvar o resultado de tabelas e liberar o botão "Avançar" automaticamente de acordo com as chaves persistidas.
+  - Envio (push) de todas as correções para o repositório remoto.
+- **Status:** Compilado, testado e sincronizado com sucesso no repositório remoto.
+
+
 
 
 

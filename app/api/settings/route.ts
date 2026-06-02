@@ -15,22 +15,16 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { 
-      openai_api_key, 
-      deepseek_api_key, 
-      supabase_url, 
-      supabase_anon_key,
-      model,
-      language
-    } = body;
+    const currentSettings = getSystemSettings();
 
+    // Mesclar chaves enviadas, mantendo as antigas se o campo não estiver no body da requisição
     saveSystemSettings({
-      openai_api_key: openai_api_key || "",
-      deepseek_api_key: deepseek_api_key || "",
-      supabase_url: supabase_url || "",
-      supabase_anon_key: supabase_anon_key || "",
-      model: model || "whisper-1",
-      language: language || "pt"
+      openai_api_key: body.openai_api_key !== undefined ? body.openai_api_key : currentSettings.openai_api_key,
+      deepseek_api_key: body.deepseek_api_key !== undefined ? body.deepseek_api_key : currentSettings.deepseek_api_key,
+      supabase_url: body.supabase_url !== undefined ? body.supabase_url : currentSettings.supabase_url,
+      supabase_anon_key: body.supabase_anon_key !== undefined ? body.supabase_anon_key : currentSettings.supabase_anon_key,
+      model: body.model !== undefined ? body.model : currentSettings.model,
+      language: body.language !== undefined ? body.language : currentSettings.language
     });
 
     return NextResponse.json({ success: true, message: "Configurações salvas com sucesso!" });

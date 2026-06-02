@@ -99,32 +99,28 @@ export default function SettingsPage() {
       });
       const data = await res.json();
       
-      if (!silent) {
-        if (data.success) {
-          setDbValidationResult({
-            success: true,
-            connectionOk: data.connectionOk,
-            tablesExist: data.tablesExist,
-            sqlScript: data.sqlScript
-          });
-        } else {
-          setDbValidationResult({
-            success: false,
-            connectionOk: false,
-            tablesExist: false,
-            error: data.error || "Falha na conexão com o banco de dados."
-          });
-        }
-      }
-    } catch (err: any) {
-      if (!silent) {
+      if (data.success) {
+        setDbValidationResult({
+          success: true,
+          connectionOk: data.connectionOk,
+          tablesExist: data.tablesExist,
+          sqlScript: data.sqlScript
+        });
+      } else {
         setDbValidationResult({
           success: false,
           connectionOk: false,
           tablesExist: false,
-          error: "Não foi possível conectar ao servidor de validação."
+          error: data.error || "Falha na conexão com o banco de dados."
         });
       }
+    } catch (err: any) {
+      setDbValidationResult({
+        success: false,
+        connectionOk: false,
+        tablesExist: false,
+        error: "Não foi possível conectar ao servidor de validação."
+      });
     } finally {
       if (!silent) {
         setValidatingDb(false);
@@ -141,7 +137,7 @@ export default function SettingsPage() {
     }
   };
 
-  // Conectar usando o Supabase Real (avança se estiver válido)
+  // Conectar usando o Supabase Real e salvar imediatamente no backend se for válido fisicamente
   const handleConnectSupabase = async () => {
     if (!supabaseUrl || !supabaseAnonKey) {
       setDbValidationResult({
@@ -152,11 +148,60 @@ export default function SettingsPage() {
       });
       return;
     }
-    await validateSupabaseConnection(supabaseUrl, supabaseAnonKey);
+    
+    setValidatingDb(true);
+    setDbValidationResult(null);
+
+    try {
+      const res = await fetch("/api/settings/validate-supabase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ supabase_url: supabaseUrl, supabase_anon_key: supabaseAnonKey })
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        setDbValidationResult({
+          success: true,
+          connectionOk: data.connectionOk,
+          tablesExist: data.tablesExist,
+          sqlScript: data.sqlScript
+        });
+
+        // Se a conexão física com o Supabase for estabelecida (com ou sem tabelas),
+        // persistimos os dados de conectividade imediatamente no backend para evitar perda em F5
+        if (data.connectionOk) {
+          await fetch("/api/settings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              supabase_url: supabaseUrl,
+              supabase_anon_key: supabaseAnonKey
+            })
+          });
+        }
+      } else {
+        setDbValidationResult({
+          success: false,
+          connectionOk: false,
+          tablesExist: false,
+          error: data.error || "Falha na conexão com o banco de dados."
+        });
+      }
+    } catch (err: any) {
+      setDbValidationResult({
+        success: false,
+        connectionOk: false,
+        tablesExist: false,
+        error: "Não foi possível conectar ao servidor de validação."
+      });
+    } finally {
+      setValidatingDb(false);
+    }
   };
 
-  // Escolher usar o banco local / mock
-  const handleUseLocalMock = () => {
+  // Escolher usar o banco local / mock e persistir a limpeza no servidor de forma imediata
+  const handleUseLocalMock = async () => {
     setSupabaseUrl("");
     setSupabaseAnonKey("");
     setDbValidationResult({
@@ -164,6 +209,21 @@ export default function SettingsPage() {
       connectionOk: false,
       tablesExist: false
     });
+
+    try {
+      // Grava no backend que o Supabase está desativado (chaves vazias)
+      await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          supabase_url: "",
+          supabase_anon_key: ""
+        })
+      });
+    } catch (err) {
+      console.error("Erro ao salvar configuração de mock local no servidor:", err);
+    }
+
     setStep(2); // Avança imediatamente
   };
 
