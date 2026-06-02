@@ -61,7 +61,7 @@ export default function SettingsPage() {
   useEffect(() => {
     async function loadSettings() {
       try {
-        const res = await fetch("/api/settings");
+        const res = await fetch("/api/settings", { cache: "no-store" });
         const json = await res.json();
         if (json.success && json.data) {
           setSupabaseUrl(json.data.supabase_url || "");

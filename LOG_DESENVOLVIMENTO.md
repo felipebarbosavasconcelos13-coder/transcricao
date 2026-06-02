@@ -188,6 +188,16 @@ Este arquivo registra todas as alterações, inicializações e modificações r
   - Envio (push) de todas as correções para o repositório remoto.
 - **Status:** Compilado, testado e sincronizado com sucesso no repositório remoto.
 
+### [2026-06-02] - Correção do Cache de APIs no Next.js (F5)
+
+- **Tarefa:** Desativar o cache de requisições GET no Next.js e no navegador para evitar respostas antigas e manter dados persistentes após F5.
+- **Modificações:**
+  - Adição de `export const dynamic = "force-dynamic";` nos Route Handlers de configurações [app/api/settings/route.ts](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/api/settings/route.ts) e de jobs [app/api/jobs/route.ts](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/api/jobs/route.ts).
+  - Inclusão de `{ cache: "no-store" }` no carregamento via `fetch` do frontend em [app/settings/page.tsx](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/settings/page.tsx).
+  - Envio (push) de todas as correções para o repositório remoto.
+- **Status:** Compilado, testado e sincronizado com sucesso no repositório remoto.
+
+
 
 
 
