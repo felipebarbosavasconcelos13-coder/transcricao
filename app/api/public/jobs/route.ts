@@ -1,9 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+export const maxDuration = 300;
+
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 import { processJob } from "@/lib/worker";
+import { buildJobInsert, getErrorMessage, isCreateJobValidationError, validateCreateJobInput } from "@/lib/jobPreferences";
 
 // GET: Retornar lista de jobs públicos (para integradores)
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
     const { data: jobs, error } = await supabase
       .from("jobs")
@@ -17,8 +20,8 @@ export async function GET(req: NextRequest) {
       message: "API Pública Atigra Trans - Lista de Jobs",
       jobs: jobs || []
     });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || "Erro interno" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: getErrorMessage(error, "Erro interno") }, { status: 500 });
   }
 }
 
@@ -26,7 +29,6 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, sourceType, sourceUrl, webhookUrl } = body;
 
     // Autenticação mock básica (Chave de API pública)
     const apiKey = req.headers.get("x-api-key");
@@ -34,25 +36,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Chave de API (x-api-key) ausente nos headers." }, { status: 401 });
     }
 
-    if (!name || !sourceType || !sourceUrl) {
-      return NextResponse.json(
-        { success: false, error: "Campos obrigatórios ausentes: name, sourceType, sourceUrl" },
-        { status: 400 }
-      );
-    }
+    const input = validateCreateJobInput(body);
 
     // Criar o registro
     const { data: job, error } = await supabase
       .from("jobs")
-      .insert({
-        name,
-        source_type: sourceType,
-        source_url: sourceUrl,
-        status: "pending",
-        progress: 0,
-        error_message: null,
-        webhook_url: webhookUrl || null
-      })
+      .insert(buildJobInsert(input))
       .select()
       .single();
 
@@ -60,12 +49,12 @@ export async function POST(req: NextRequest) {
       throw error || new Error("Falha ao criar o job via API.");
     }
 
-    // Iniciar processamento assíncrono
-    setTimeout(() => {
+    // Iniciar processamento assíncrono de forma compatível com serverless.
+    after(async () => {
       processJob(job.id).catch((err) => {
         console.error(`[PUBLIC API WORKER ERROR] Erro no Job ${job.id}:`, err);
       });
-    }, 100);
+    });
 
     return NextResponse.json({
       success: true,
@@ -79,7 +68,8 @@ export async function POST(req: NextRequest) {
       }
     });
 
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || "Erro interno" }, { status: 500 });
+  } catch (error: unknown) {
+    const status = isCreateJobValidationError(error) ? 400 : 500;
+    return NextResponse.json({ success: false, error: getErrorMessage(error, "Erro interno") }, { status });
   }
 }

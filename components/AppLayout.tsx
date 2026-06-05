@@ -9,11 +9,6 @@ import {
   Settings as SettingsIcon, 
   Menu, 
   X, 
-  Sun, 
-  Moon, 
-  Sparkles, 
-  FileText,
-  HelpCircle,
   PlusCircle
 } from "lucide-react";
 
@@ -23,32 +18,18 @@ interface AppLayoutProps {
 
 export default function AppLayout({ children }: AppLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
   const pathname = usePathname();
 
   // Inicializar o tema com base no LocalStorage ou preferência do sistema
   useEffect(() => {
     const isDark = localStorage.getItem("theme") === "dark" || 
       (!localStorage.getItem("theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
-    setDarkMode(isDark);
     if (isDark) {
       document.documentElement.classList.add("dark");
     } else {
       document.documentElement.classList.remove("dark");
     }
   }, []);
-
-  const toggleDarkMode = () => {
-    const newMode = !darkMode;
-    setDarkMode(newMode);
-    if (newMode) {
-      document.documentElement.classList.add("dark");
-      localStorage.setItem("theme", "dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-      localStorage.setItem("theme", "light");
-    }
-  };
 
   const menuItems = [
     { name: "Novo Trabalho", href: "/jobs/new", icon: PlusCircle },
@@ -61,7 +42,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       
       {/* Mobile Header */}
       <header className="md:hidden flex items-center justify-between px-4 py-3 bg-white dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700 shadow-sm z-30">
-        <Link href="/" className="flex items-center gap-2">
+        <Link href="/jobs/new" className="flex items-center gap-2">
           <div className="p-1.5 bg-primary-500 rounded-lg text-white">
             <Video size={20} className="animate-pulse-slow" />
           </div>
@@ -70,13 +51,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
           </span>
         </Link>
         <div className="flex items-center gap-3">
-          <button 
-            onClick={toggleDarkMode}
-            className="p-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-500 dark:text-neutral-400 transition-colors"
-            aria-label="Alternar Modo Escuro"
-          >
-            {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
           <button 
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="p-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-500 dark:text-neutral-400 transition-colors"
@@ -102,7 +76,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       >
         {/* Brand Logo */}
         <div className="h-16 flex items-center justify-between px-6 border-b border-neutral-200 dark:border-neutral-800/50">
-          <Link href="/" className="flex items-center gap-3 overflow-hidden">
+          <Link href="/jobs/new" className="flex items-center gap-3 overflow-hidden">
             <div className="p-2 bg-gradient-to-tr from-primary-500 to-secondary-400 rounded-xl text-white shadow-md shadow-primary-500/20 shrink-0">
               <Video size={22} />
             </div>
@@ -150,25 +124,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
         </nav>
 
         {/* Footer Sidebar Control */}
-        <div className="p-4 border-t border-neutral-200 dark:border-neutral-800/50 space-y-3">
-          {/* Theme Toggle Desktop */}
-          <button
-            onClick={toggleDarkMode}
-            className="w-full hidden md:flex items-center gap-3 px-4 py-3 rounded-xl text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800/50 hover:text-neutral-900 dark:hover:text-neutral-100 transition-all font-medium"
-          >
-            {darkMode ? (
-              <>
-                <Sun size={20} className="text-amber-500 animate-spin-slow" />
-                {sidebarOpen && <span className="text-sm">Modo Claro</span>}
-              </>
-            ) : (
-              <>
-                <Moon size={20} className="text-primary-400" />
-                {sidebarOpen && <span className="text-sm">Modo Escuro</span>}
-              </>
-            )}
-          </button>
-
+        <div className="p-4 border-t border-neutral-200 dark:border-neutral-800/50">
           {/* Toggle Expand Sidebar */}
           {!sidebarOpen && (
             <button
@@ -178,18 +134,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
             >
               <Menu size={20} />
             </button>
-          )}
-
-          {sidebarOpen && (
-            <div className="flex items-center gap-3 px-3 py-2 bg-neutral-100 dark:bg-neutral-900/60 rounded-xl">
-              <div className="p-2 bg-secondary-500/10 text-secondary-500 rounded-lg shrink-0">
-                <Sparkles size={16} />
-              </div>
-              <div className="min-w-0">
-                <p className="font-sans text-xs font-bold text-neutral-700 dark:text-neutral-300 truncate">Atigra Pro</p>
-                <p className="font-sans text-[10px] text-neutral-400 truncate">Plano Gratuito</p>
-              </div>
-            </div>
           )}
         </div>
       </aside>

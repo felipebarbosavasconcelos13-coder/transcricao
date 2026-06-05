@@ -1,4 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+export const maxDuration = 300;
+
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 import { processJob } from "@/lib/worker";
 
@@ -44,12 +46,14 @@ export async function POST(
 
     console.log(`[JOBS RETRY] Reprocessamento iniciado para o Job ${id}`);
 
-    // 4. Disparar o processamento de novo
-    setTimeout(() => {
-      processJob(id).catch((err) => {
+    // 4. Disparar o processamento de novo em segundo plano (resiliente a serverless)
+    after(async () => {
+      try {
+        await processJob(id);
+      } catch (err) {
         console.error(`[WORKER RUNTIME ERROR ON RETRY] Erro ao reprocessar Job ${id}:`, err);
-      });
-    }, 100);
+      }
+    });
 
     return NextResponse.json({ success: true, data: updatedJob });
   } catch (error: any) {

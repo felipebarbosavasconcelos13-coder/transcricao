@@ -5,16 +5,124 @@ import ytdl from "@distube/ytdl-core";
 import fs from "fs";
 import path from "path";
 import { OpenAI } from "openai";
+import { createClient } from "@supabase/supabase-js";
+import { getOpenaiApiKey, getDeepseekApiKey, getSystemSettings, getSupabaseServiceRoleKey, getSupabaseUrl } from "./settings";
+import { getErrorMessage } from "./jobPreferences";
 
-// Configura o ffmpeg para usar o binário estático correto do SO
-if (ffmpegPath) {
-  ffmpeg.setFfmpegPath(ffmpegPath);
-  console.log(`[FFMPEG] Utilizando binário estático em: ${ffmpegPath}`);
-} else {
-  console.warn("[FFMPEG] Não foi possível encontrar o binário estático do ffmpeg-static.");
+interface TranscriptSegment {
+  id: number;
+  start: number;
+  end: number;
+  text: string;
 }
 
-import { getOpenaiApiKey, getDeepseekApiKey, getSystemSettings } from "./settings";
+interface WorkerJob {
+  id: string;
+  name: string;
+  source_type: "upload" | "youtube";
+  source_url: string;
+  asr_model?: string;
+  webhook_url?: string | null;
+  duration?: number;
+}
+
+type TranscriptionResult = { text: string; segments: TranscriptSegment[] };
+
+interface PreparedMedia {
+  tempVideoPath: string;
+  tempAudioPath: string;
+  sourceStoragePath: string;
+  isYoutube: boolean;
+}
+
+function resolveFfmpegPath() {
+  const executable = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+  const candidates = [
+    process.env.FFMPEG_BIN,
+    path.join(process.cwd(), "node_modules", "ffmpeg-static", executable),
+    ffmpegPath,
+  ].filter(Boolean) as string[];
+
+  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
+}
+
+function getVideoStoragePath(sourceUrl: string) {
+  try {
+    const url = new URL(sourceUrl);
+    const marker = "/videos/";
+    const markerIndex = url.pathname.indexOf(marker);
+    const storagePath = markerIndex >= 0
+      ? url.pathname.slice(markerIndex + marker.length)
+      : url.pathname.slice(url.pathname.lastIndexOf("/") + 1);
+
+    return decodeURIComponent(storagePath);
+  } catch {
+    return decodeURIComponent(sourceUrl.split("?")[0].replace(/^\/+/, ""));
+  }
+}
+
+function getYoutubeRequestOptions() {
+  const cookiesJson = process.env.YOUTUBE_COOKIES_JSON;
+  if (!cookiesJson) return {};
+
+  try {
+    return { agent: ytdl.createAgent(JSON.parse(cookiesJson)) };
+  } catch {
+    console.warn("[YTDL] YOUTUBE_COOKIES_JSON inválido. Continuando sem cookies.");
+    return {};
+  }
+}
+
+function getYoutubeErrorMessage(message: string) {
+  const lowerMessage = message.toLowerCase();
+  if (
+    lowerMessage.includes("sign in to confirm") ||
+    lowerMessage.includes("not a bot") ||
+    lowerMessage.includes("429") ||
+    lowerMessage.includes("too many requests")
+  ) {
+    return "O YouTube bloqueou o download automático deste vídeo por verificação anti-bot. Use upload de arquivo ou configure YOUTUBE_COOKIES_JSON na Vercel para autenticar as requisições do YouTube.";
+  }
+
+  return `Erro no download do YouTube: ${message}`;
+}
+
+function getTempDir() {
+  const tempDir = typeof window === "undefined" && process.env.NODE_ENV === "production"
+    ? "/tmp"
+    : path.join(process.cwd(), "public", "mock-uploads");
+
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
+
+  return tempDir;
+}
+
+async function deleteStoredVideo(storagePath: string) {
+  const supabaseUrl = getSupabaseUrl();
+  const serviceRoleKey = getSupabaseServiceRoleKey();
+  const storageClient = supabaseUrl && serviceRoleKey
+    ? createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
+    : supabase;
+
+  const { error } = await storageClient.storage.from("videos").remove([storagePath]);
+  if (error) {
+    console.warn(`[WORKER] Falha ao excluir vídeo do Storage (${storagePath}): ${error.message}`);
+    return;
+  }
+
+  console.log(`[WORKER] Vídeo removido do Storage após extração do áudio: ${storagePath}`);
+}
+
+// Configura o ffmpeg para usar o binário estático correto do SO
+const resolvedFfmpegPath = resolveFfmpegPath();
+if (resolvedFfmpegPath) {
+  ffmpeg.setFfmpegPath(resolvedFfmpegPath);
+  console.log(`[FFMPEG] Utilizando binário estático em: ${resolvedFfmpegPath}`);
+} else {
+  console.warn(`[FFMPEG] Binário do ffmpeg-static não encontrado em: ${ffmpegPath || "caminho indisponível"}`);
+}
 
 // Inicializar cliente OpenAI dinamicamente com suporte a configurações em tempo de execução
 function getOpenaiClient() {
@@ -22,192 +130,194 @@ function getOpenaiClient() {
   return key ? new OpenAI({ apiKey: key }) : null;
 }
 
+async function getJob(jobId: string) {
+  const { data: job, error } = await supabase
+    .from("jobs")
+    .select("*")
+    .eq("id", jobId)
+    .single();
+
+  if (error || !job) {
+    throw new Error(`Job ${jobId} não encontrado no banco de dados.`);
+  }
+
+  return job as WorkerJob;
+}
+
+async function prepareMedia(job: WorkerJob, jobId: string): Promise<PreparedMedia> {
+  const isYoutube = job.source_type === "youtube";
+  const sourceUrl = job.source_url;
+  const tempDir = getTempDir();
+  const uniqueId = `${Date.now()}-${jobId.substring(0, 8)}`;
+
+  if (isYoutube) {
+    const tempVideoPath = path.join(tempDir, `${uniqueId}-yt.mp4`);
+    const tempAudioPath = path.join(tempDir, `${uniqueId}-yt.mp3`);
+
+    console.log(`[WORKER] Baixando áudio do YouTube: ${sourceUrl}`);
+    await downloadYoutubeAudio(sourceUrl, tempVideoPath);
+    await updateYoutubeMetadata(jobId, sourceUrl, job.name);
+
+    return { tempVideoPath, tempAudioPath, sourceStoragePath: "", isYoutube };
+  }
+
+  console.log(`[WORKER] Processando mídia de upload: ${sourceUrl}`);
+
+  if (isUsingMock) {
+    const filename = sourceUrl.replace("/mock-uploads/", "");
+    const tempVideoPath = path.join(process.cwd(), "public", "mock-uploads", filename);
+    return {
+      tempVideoPath,
+      tempAudioPath: tempVideoPath.replace(/\.[^/.]+$/, ".mp3"),
+      sourceStoragePath: "",
+      isYoutube,
+    };
+  }
+
+  const tempVideoPath = path.join(tempDir, `${uniqueId}-upload.mp4`);
+  const tempAudioPath = path.join(tempDir, `${uniqueId}-upload.mp3`);
+  const sourceStoragePath = getVideoStoragePath(sourceUrl);
+
+  console.log("[WORKER] Baixando mídia do Supabase Storage para processamento local...");
+  const { data: fileData, error: downloadErr } = await supabase.storage
+    .from("videos")
+    .download(sourceStoragePath);
+
+  if (downloadErr || !fileData) {
+    throw downloadErr || new Error("Falha ao baixar arquivo do storage");
+  }
+
+  const arrayBuffer = await fileData.arrayBuffer();
+  fs.writeFileSync(tempVideoPath, Buffer.from(arrayBuffer));
+
+  return { tempVideoPath, tempAudioPath, sourceStoragePath, isYoutube };
+}
+
+async function updateYoutubeMetadata(jobId: string, sourceUrl: string, fallbackName: string) {
+  try {
+    const info = await ytdl.getBasicInfo(sourceUrl, getYoutubeRequestOptions());
+    const durationSec = parseInt(info.videoDetails.lengthSeconds) || 0;
+    await supabase
+      .from("jobs")
+      .update({
+        name: info.videoDetails.title || fallbackName,
+        duration: durationSec,
+      })
+      .eq("id", jobId);
+  } catch (e) {
+    console.error("Falha ao obter metadados do YouTube:", e);
+  }
+}
+
+async function transcribeAudio(job: WorkerJob, audioPath: string, duration: number): Promise<TranscriptionResult> {
+  const settings = getSystemSettings();
+  const selectedModel = job.asr_model || settings.model;
+
+  if (selectedModel === "deepseek-asr") {
+    const deepseekKey = getDeepseekApiKey();
+    console.log(
+      deepseekKey
+        ? "[WORKER] DeepSeek API Key ativa. Usando transcrição simulada compatível com DeepSeek ASR."
+        : "[WORKER] DeepSeek API Key não configurada. Simulando transcrição realista..."
+    );
+    await new Promise((resolve) => setTimeout(resolve, deepseekKey ? 3000 : 4000));
+    return generateMockTranscription(job.name, duration || 60);
+  }
+
+  const openaiClient = getOpenaiClient();
+  if (!openaiClient) {
+    console.log("[WORKER] OpenAI API Key não configurada. Simulando transcrição realista...");
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+    return generateMockTranscription(job.name, duration || 60);
+  }
+
+  console.log("[WORKER] Enviando áudio para OpenAI Whisper API...");
+  return transcribeWithWhisper(audioPath, openaiClient);
+}
+
+async function saveTranscript(jobId: string, transcriptionResult: TranscriptionResult) {
+  const { error } = await supabase
+    .from("transcripts")
+    .insert({
+      id: jobId,
+      raw_text: transcriptionResult.text,
+      clean_text: transcriptionResult.text,
+      summary: null,
+      highlights: [],
+      segments: transcriptionResult.segments,
+    });
+
+  if (error) throw error;
+}
+
+function cleanupTempFiles(tempVideoPath: string, tempAudioPath: string) {
+  if (isUsingMock) return;
+
+  try {
+    if (tempVideoPath && fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath);
+    if (tempAudioPath && fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath);
+    console.log("[WORKER] Arquivos temporários limpos.");
+  } catch (e) {
+    console.error("Erro ao limpar arquivos temporários:", e);
+  }
+}
+
+async function failJob(jobId: string, error: unknown) {
+  const message = getErrorMessage(error, "Erro desconhecido durante o processamento");
+  await supabase
+    .from("jobs")
+    .update({
+      status: "failed",
+      progress: 0,
+      error_message: message,
+    })
+    .eq("id", jobId);
+
+  triggerWebhook(jobId, "failed", message);
+}
+
 // Função principal de processamento de Jobs
 export async function processJob(jobId: string) {
   console.log(`[WORKER] Iniciando processamento do Job ${jobId}`);
-  
+
   let tempVideoPath = "";
   let tempAudioPath = "";
-  let isYoutube = false;
-  
+
   try {
-    // 1. Obter o job do banco de dados
-    const { data: job, error: jobErr } = await supabase
-      .from("jobs")
-      .select("*")
-      .eq("id", jobId)
-      .single();
-      
-    if (jobErr || !job) {
-      throw new Error(`Job ${jobId} não encontrado no banco de dados.`);
-    }
+    const job = await getJob(jobId);
 
-    isYoutube = job.source_type === "youtube";
-    const sourceUrl = job.source_url;
-    
-    // Determinar pastas temporárias de trabalho (compatível com Serverless /tmp e ambiente local)
-    const tempDir = typeof window === "undefined" && process.env.NODE_ENV === "production" 
-      ? "/tmp" 
-      : path.join(process.cwd(), "public", "mock-uploads");
-
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
-
-    const uniqueId = `${Date.now()}-${jobId.substring(0, 8)}`;
-    
-    // 2. Extração / Download de mídia
     await updateJobStatus(jobId, "processing_audio", 15);
-    
-    if (isYoutube) {
-      console.log(`[WORKER] Baixando áudio do YouTube: ${sourceUrl}`);
-      tempVideoPath = path.join(tempDir, `${uniqueId}-yt.mp4`);
-      tempAudioPath = path.join(tempDir, `${uniqueId}-yt.wav`);
-      
-      // Baixar áudio do YouTube
-      await downloadYoutubeAudio(sourceUrl, tempVideoPath);
-      
-      // Atualizar info sobre o vídeo do YouTube (duração aproximada)
-      try {
-        const info = await ytdl.getBasicInfo(sourceUrl);
-        const durationSec = parseInt(info.videoDetails.lengthSeconds) || 0;
-        await supabase
-          .from("jobs")
-          .update({ 
-            name: info.videoDetails.title || job.name,
-            duration: durationSec 
-          })
-          .eq("id", jobId);
-      } catch (e) {
-        console.error("Falha ao obter metadados do YouTube:", e);
-      }
-    } else {
-      // É upload local
-      console.log(`[WORKER] Processando vídeo de upload local: ${sourceUrl}`);
-      
-      if (isUsingMock) {
-        // No mock, o arquivo está na pasta public/mock-uploads
-        const filename = sourceUrl.replace("/mock-uploads/", "");
-        tempVideoPath = path.join(process.cwd(), "public", "mock-uploads", filename);
-        tempAudioPath = tempVideoPath.replace(/\.[^/.]+$/, ".wav");
-      } else {
-        // No Supabase real, precisamos baixar o vídeo do Storage para a pasta /tmp para processar
-        tempVideoPath = path.join(tempDir, `${uniqueId}-upload.mp4`);
-        tempAudioPath = path.join(tempDir, `${uniqueId}-upload.wav`);
-        
-        console.log(`[WORKER] Baixando vídeo do Supabase Storage para processamento local...`);
-        const filename = sourceUrl.substring(sourceUrl.lastIndexOf("/") + 1);
-        const { data: fileData, error: downloadErr } = await supabase.storage
-          .from("videos")
-          .download(filename);
-          
-        if (downloadErr || !fileData) {
-          throw downloadErr || new Error("Falha ao baixar arquivo do storage");
-        }
-        
-        const arrayBuffer = await fileData.arrayBuffer();
-        fs.writeFileSync(tempVideoPath, Buffer.from(arrayBuffer));
-      }
+    const media = await prepareMedia(job, jobId);
+    tempVideoPath = media.tempVideoPath;
+    tempAudioPath = media.tempAudioPath;
+
+    await updateJobStatus(jobId, "processing_audio", 45);
+    console.log(`[WORKER] Convertendo vídeo para áudio MP3 compacto (mono 16kHz): ${tempVideoPath} -> ${tempAudioPath}`);
+    await convertVideoToAudio(tempVideoPath, tempAudioPath);
+
+    if (!media.isYoutube && !isUsingMock && media.sourceStoragePath) {
+      await deleteStoredVideo(media.sourceStoragePath);
     }
 
-    // 3. Conversão de Vídeo para Áudio via ffmpeg (normalizado para 16kHz mono)
-    await updateJobStatus(jobId, "processing_audio", 45);
-    console.log(`[WORKER] Convertendo vídeo para áudio (mono 16kHz): ${tempVideoPath} -> ${tempAudioPath}`);
-    
-    await convertVideoToAudio(tempVideoPath, tempAudioPath);
-    
-    // Obter a duração real do áudio caso não tenha sido obtida antes
     const actualDuration = await getAudioDuration(tempAudioPath).catch(() => 0);
     if (actualDuration > 0) {
       await supabase.from("jobs").update({ duration: actualDuration }).eq("id", jobId);
     }
 
-    // 4. Transcrição (Whisper API, DeepSeek ASR ou Mock Simulado)
     await updateJobStatus(jobId, "transcribing", 70);
-    
-    let transcriptionResult: { text: string; segments: any[] };
-    
-    const settings = getSystemSettings();
-    const isDeepseek = settings.model === "deepseek-asr";
+    const transcriptionResult = await transcribeAudio(job, tempAudioPath, actualDuration);
 
-    if (isDeepseek) {
-      const deepseekKey = getDeepseekApiKey();
-      if (deepseekKey) {
-        console.log(`[WORKER] Enviando áudio para DeepSeek ASR API com chave ativa...`);
-        // Como o DeepSeek não oferece suporte nativo ASR para áudio, realizamos o processamento via ASR simulado do DeepSeek
-        const duration = actualDuration || 60;
-        transcriptionResult = generateMockTranscription(job.name, duration);
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-      } else {
-        console.log(`[WORKER] DeepSeek API Key não configurada. Simulando transcrição realista...`);
-        const duration = actualDuration || 60;
-        transcriptionResult = generateMockTranscription(job.name, duration);
-        await new Promise((resolve) => setTimeout(resolve, 4000));
-      }
-    } else {
-      const openaiClient = getOpenaiClient();
-      if (openaiClient) {
-        console.log(`[WORKER] Enviando áudio para OpenAI Whisper API...`);
-        transcriptionResult = await transcribeWithWhisper(tempAudioPath, openaiClient);
-      } else {
-        console.log(`[WORKER] OpenAI API Key não configurada. Simulando transcrição realista...`);
-        const duration = actualDuration || 60;
-        transcriptionResult = generateMockTranscription(job.name, duration);
-        await new Promise((resolve) => setTimeout(resolve, 4000));
-      }
-    }
-
-    // 5. Pós-processamento e Salvamento
     await updateJobStatus(jobId, "post_processing", 90);
-    
-    // Salvar na tabela transcripts
-    const { error: transErr } = await supabase
-      .from("transcripts")
-      .insert({
-        id: jobId,
-        raw_text: transcriptionResult.text,
-        clean_text: transcriptionResult.text, // Inicialmente igual, melhorado na etapa IA
-        summary: null,
-        highlights: [],
-        segments: transcriptionResult.segments
-      });
-      
-    if (transErr) {
-      throw transErr;
-    }
+    await saveTranscript(jobId, transcriptionResult);
 
-    // 6. Concluir o Job
     await updateJobStatus(jobId, "completed", 100);
     console.log(`[WORKER] Job ${jobId} concluído com sucesso!`);
-
-    // Disparar Webhook de conclusão
     triggerWebhook(jobId, "completed");
-
-    // Limpar arquivos temporários que não precisamos mais (se não for mock)
-    // No mock mantemos o áudio e vídeo na pasta public/mock-uploads para reprodução
-    if (!isUsingMock) {
-      try {
-        if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath);
-        if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath);
-        console.log(`[WORKER] Arquivos temporários limpos.`);
-      } catch (e) {
-        console.error("Erro ao limpar arquivos temporários:", e);
-      }
-    }
-
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(`[WORKER FAILED] Erro no processamento do Job ${jobId}:`, error);
-    await supabase
-      .from("jobs")
-      .update({
-        status: "failed",
-        progress: 0,
-        error_message: error.message || "Erro desconhecido durante o processamento"
-      })
-      .eq("id", jobId);
-
-    // Disparar Webhook de erro
-    triggerWebhook(jobId, "failed", error.message || "Erro desconhecido");
+    await failJob(jobId, error);
+  } finally {
+    cleanupTempFiles(tempVideoPath, tempAudioPath);
   }
 }
 
@@ -233,12 +343,12 @@ async function triggerWebhook(jobId: string, status: string, errorMsg: string | 
           duration: job.duration,
           error_message: errorMsg
         })
-      }).catch((e: any) => {
-        console.error(`[WEBHOOK ERROR] Falha no POST do Webhook:`, e.message);
+      }).catch((e: unknown) => {
+        console.error(`[WEBHOOK ERROR] Falha no POST do Webhook:`, getErrorMessage(e));
       });
     }
-  } catch (e: any) {
-    console.error(`[WEBHOOK ERROR] Falha ao disparar webhook:`, e.message);
+  } catch (e: unknown) {
+    console.error(`[WEBHOOK ERROR] Falha ao disparar webhook:`, getErrorMessage(e));
   }
 }
 
@@ -258,7 +368,8 @@ function downloadYoutubeAudio(url: string, outputPath: string): Promise<void> {
       // Usar a melhor qualidade de áudio
       const stream = ytdl(url, { 
         filter: "audioonly",
-        quality: "highestaudio"
+        quality: "highestaudio",
+        ...getYoutubeRequestOptions()
       });
       
       const fileStream = fs.createWriteStream(outputPath);
@@ -270,27 +381,28 @@ function downloadYoutubeAudio(url: string, outputPath: string): Promise<void> {
       });
       
       stream.on("error", (err) => {
-        reject(new Error(`Erro no download do YouTube: ${err.message}`));
+        reject(new Error(getYoutubeErrorMessage(err.message)));
       });
       
       fileStream.on("error", (err) => {
         reject(new Error(`Erro de escrita do arquivo de áudio: ${err.message}`));
       });
-    } catch (e: any) {
+    } catch (e: unknown) {
       reject(e);
     }
   });
 }
 
-// Conversão do vídeo em áudio mono 16kHz
+// Conversão do vídeo em áudio MP3 mono 16kHz, mantendo o arquivo pequeno para APIs de transcrição.
 function convertVideoToAudio(inputPath: string, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
       .outputOptions([
-        "-vn",               // Sem vídeo
-        "-ac 1",             // 1 canal (mono)
-        "-ar 16000",         // Taxa de amostragem de 16kHz
-        "-codec:a pcm_s16le" // Codec de áudio PCM 16-bit
+        "-vn",              // Sem vídeo
+        "-ac 1",            // 1 canal (mono)
+        "-ar 16000",        // Taxa de amostragem de 16kHz
+        "-codec:a libmp3lame",
+        "-b:a 32k"
       ])
       .save(outputPath)
       .on("end", () => {
@@ -317,7 +429,7 @@ function getAudioDuration(filePath: string): Promise<number> {
 }
 
 // Realiza a transcrição real na API do Whisper
-async function transcribeWithWhisper(audioPath: string, openaiClient: OpenAI): Promise<{ text: string; segments: any[] }> {
+async function transcribeWithWhisper(audioPath: string, openaiClient: OpenAI): Promise<TranscriptionResult> {
   if (!openaiClient) {
     throw new Error("Cliente OpenAI não inicializado");
   }
@@ -332,12 +444,12 @@ async function transcribeWithWhisper(audioPath: string, openaiClient: OpenAI): P
     timestamp_granularities: ["word", "segment"]
   });
 
-  const rawResponse = response as any;
-  const segments = (rawResponse.segments || []).map((seg: any) => ({
-    id: seg.id,
-    start: seg.start,
-    end: seg.end,
-    text: seg.text.trim()
+  const rawResponse = response as { text: string; segments?: Array<Partial<TranscriptSegment> & { text?: string }> };
+  const segments = (rawResponse.segments || []).map((seg, index) => ({
+    id: typeof seg.id === "number" ? seg.id : index,
+    start: typeof seg.start === "number" ? seg.start : 0,
+    end: typeof seg.end === "number" ? seg.end : 0,
+    text: (seg.text || "").trim()
   }));
 
   return {
@@ -347,7 +459,7 @@ async function transcribeWithWhisper(audioPath: string, openaiClient: OpenAI): P
 }
 
 // Simulação de transcrição realista (Mock)
-function generateMockTranscription(title: string, durationSec: number): { text: string; segments: any[] } {
+function generateMockTranscription(title: string, durationSec: number): TranscriptionResult {
   const words = [
     "Olá a todos!", "Sejam muito bem-vindos a mais um vídeo explicativo.",
     "Hoje nós vamos falar sobre um assunto muito importante e interessante:",
@@ -368,7 +480,7 @@ function generateMockTranscription(title: string, durationSec: number): { text: 
     "Muito obrigado pela atenção e nos vemos no próximo tutorial. Até mais!"
   ];
 
-  const segments: any[] = [];
+  const segments: TranscriptSegment[] = [];
   let currentStart = 0.5;
   const timePerSegment = durationSec / words.length;
 

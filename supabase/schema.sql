@@ -12,7 +12,10 @@ CREATE TABLE IF NOT EXISTS public.jobs (
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing_audio', 'transcribing', 'post_processing', 'completed', 'failed')),
     progress INTEGER NOT NULL DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
     error_message TEXT,
+    webhook_url TEXT,
     duration NUMERIC DEFAULT 0,
+    asr_model TEXT NOT NULL DEFAULT 'whisper-1' CHECK (asr_model IN ('whisper-1', 'deepseek-asr')),
+    language TEXT NOT NULL DEFAULT 'pt',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );

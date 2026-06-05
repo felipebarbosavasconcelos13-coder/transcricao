@@ -43,3 +43,5 @@ next-env.d.ts
 # mock databases and temporary uploads
 /temp_db.json
 /public/mock-uploads/
+
+.vercel

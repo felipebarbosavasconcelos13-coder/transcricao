@@ -1,14 +1,10 @@
+export const dynamic = "force-dynamic";
+export const maxDuration = 300;
+
 import { NextRequest, NextResponse } from "next/server";
 import { supabase, isUsingMock } from "@/lib/supabaseClient";
 import fs from "fs";
 import path from "path";
-
-// Desativar limites do body para Next.js se possível (no Next.js 15+ isso é configurado via export config)
-export const config = {
-  api: {
-    bodyParser: false, // Necessário para stream de arquivos grandes
-  },
-};
 
 export async function POST(req: NextRequest) {
   try {

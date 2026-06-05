@@ -1,8 +1,12 @@
 export const dynamic = "force-dynamic";
+// Permite que o processamento em background rode por mais tempo em plataformas
+// serverless (ex.: Vercel). Ajuste conforme o limite do seu plano (Hobby: 60s).
+export const maxDuration = 300;
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 import { processJob } from "@/lib/worker";
+import { buildJobInsert, getErrorMessage, isCreateJobValidationError, validateCreateJobInput } from "@/lib/jobPreferences";
 
 // GET: Listar todos os jobs (com suporte a busca textual)
 export async function GET(req: NextRequest) {
@@ -22,7 +26,7 @@ export async function GET(req: NextRequest) {
         .select("id")
         .or(`raw_text.ilike.%${q}%,clean_text.ilike.%${q}%`);
 
-      const matchedIds = (matchedTranscripts || []).map((t: any) => t.id);
+      const matchedIds = ((matchedTranscripts || []) as Array<{ id: string }>).map((t) => t.id);
 
       // 2. Filtrar jobs: título correspondente OU ID contido nas transcrições que bateram
       if (matchedIds.length > 0) {
@@ -41,9 +45,9 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({ success: true, data: jobs });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Erro ao buscar jobs:", error);
-    return NextResponse.json({ error: error.message || "Erro no servidor" }, { status: 500 });
+    return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -51,28 +55,12 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, sourceType, sourceUrl, duration, webhookUrl } = body;
-
-    if (!name || !sourceType || !sourceUrl) {
-      return NextResponse.json(
-        { error: "Campos obrigatórios ausentes: name, sourceType, sourceUrl" },
-        { status: 400 }
-      );
-    }
+    const input = validateCreateJobInput(body);
 
     // Criar o registro do Job com status 'pending' e progresso 0
     const { data: job, error } = await supabase
       .from("jobs")
-      .insert({
-        name,
-        source_type: sourceType,
-        source_url: sourceUrl,
-        status: "pending",
-        progress: 0,
-        duration: duration || 0,
-        error_message: null,
-        webhook_url: webhookUrl || null
-      })
+      .insert(buildJobInsert(input))
       .select()
       .single();
 
@@ -82,17 +70,21 @@ export async function POST(req: NextRequest) {
 
     console.log(`[JOBS API] Job criado com sucesso ID: ${job.id}. Iniciando processamento...`);
 
-    // Iniciar o processamento assincronamente em segundo plano (sem dar await)
-    // Usamos setTimeout para garantir que a resposta HTTP seja entregue imediatamente ao cliente
-    setTimeout(() => {
-      processJob(job.id).catch((err) => {
+    // Processamento em segundo plano. Usamos `after()` do Next.js para que o trabalho
+    // continue após a resposta HTTP SEM que a função serverless seja encerrada
+    // prematuramente (o que ocorria com setTimeout em ambientes como a Vercel).
+    after(async () => {
+      try {
+        await processJob(job.id);
+      } catch (err) {
         console.error(`[WORKER RUNTIME ERROR] Erro ao processar Job ${job.id}:`, err);
-      });
-    }, 100);
+      }
+    });
 
     return NextResponse.json({ success: true, data: job });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Erro ao criar job:", error);
-    return NextResponse.json({ error: error.message || "Erro no servidor" }, { status: 500 });
+    const status = isCreateJobValidationError(error) ? 400 : 500;
+    return NextResponse.json({ error: getErrorMessage(error) }, { status });
   }
 }

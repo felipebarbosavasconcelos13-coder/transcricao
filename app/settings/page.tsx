@@ -23,6 +23,8 @@ import {
   Bot
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { getLocalPreferences, saveLocalPreferences } from "@/lib/localPreferences";
+import type { AsrModel } from "@/lib/jobPreferences";
 
 export default function SettingsPage() {
   // Controle de Etapa (1: Banco de Dados, 2: IA)
@@ -31,10 +33,15 @@ export default function SettingsPage() {
   // Estados dos Campos
   const [supabaseUrl, setSupabaseUrl] = useState("");
   const [supabaseAnonKey, setSupabaseAnonKey] = useState("");
-  const [model, setModel] = useState("whisper-1");
+  const [model, setModel] = useState<AsrModel>("whisper-1");
   const [openaiKey, setOpenaiKey] = useState("");
   const [deepseekKey, setDeepseekKey] = useState("");
   const [language, setLanguage] = useState("pt");
+
+  // Flags indicando que a chave já está configurada no servidor (arquivo ou variável de ambiente).
+  // As chaves secretas nunca são devolvidas ao navegador.
+  const [openaiConfigured, setOpenaiConfigured] = useState(false);
+  const [deepseekConfigured, setDeepseekConfigured] = useState(false);
 
   // Visibilidade de Senhas
   const [showOpenaiKey, setShowOpenaiKey] = useState(false);
@@ -64,12 +71,15 @@ export default function SettingsPage() {
         const res = await fetch("/api/settings", { cache: "no-store" });
         const json = await res.json();
         if (json.success && json.data) {
+          const localPreferences = getLocalPreferences();
           setSupabaseUrl(json.data.supabase_url || "");
           setSupabaseAnonKey(json.data.supabase_anon_key || "");
-          setModel(json.data.model || "whisper-1");
-          setOpenaiKey(json.data.openai_api_key || "");
-          setDeepseekKey(json.data.deepseek_api_key || "");
-          setLanguage(json.data.language || "pt");
+          setModel(localPreferences.asrModel || json.data.model || "whisper-1");
+          setOpenaiKey("");
+          setDeepseekKey("");
+          setOpenaiConfigured(!!json.data.openai_configured);
+          setDeepseekConfigured(!!json.data.deepseek_configured);
+          setLanguage(localPreferences.language || json.data.language || "pt");
 
           // Se já tem credenciais salvas do Supabase, rodar validação inicial silenciosa
           if (json.data.supabase_url && json.data.supabase_anon_key) {
@@ -235,22 +245,34 @@ export default function SettingsPage() {
     setErrorMessage("");
 
     try {
+      saveLocalPreferences({ asrModel: model, language });
+
+      // Só enviamos as chaves secretas quando o usuário realmente digitou um valor novo,
+      // evitando sobrescrever chaves já configuradas (inclusive via variável de ambiente).
+      const payload: Record<string, any> = {
+        supabase_url: supabaseUrl,
+        supabase_anon_key: supabaseAnonKey,
+        model,
+        language
+      };
+      if (openaiKey.trim()) payload.openai_api_key = openaiKey.trim();
+      if (deepseekKey.trim()) payload.deepseek_api_key = deepseekKey.trim();
+
       const res = await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          openai_api_key: openaiKey,
-          deepseek_api_key: deepseekKey,
-          supabase_url: supabaseUrl,
-          supabase_anon_key: supabaseAnonKey,
-          model,
-          language
-        })
+        body: JSON.stringify(payload)
       });
 
       const json = await res.json();
       if (json.success) {
         setSaveStatus("success");
+        if (openaiKey.trim()) setOpenaiConfigured(true);
+        if (deepseekKey.trim()) setDeepseekConfigured(true);
+        setTimeout(() => setSaveStatus(null), 5000);
+      } else if (json.readonly) {
+        setSaveStatus("success");
+        setErrorMessage("");
         setTimeout(() => setSaveStatus(null), 5000);
       } else {
         setSaveStatus("error");
@@ -560,7 +582,7 @@ export default function SettingsPage() {
                       </span>
 
                       {model === "whisper-1" ? (
-                        openaiKey ? (
+                        (openaiKey || openaiConfigured) ? (
                           <div className="flex items-center gap-2 p-2.5 bg-emerald-500/10 text-emerald-500 rounded-xl">
                             <Check size={14} className="shrink-0" />
                             <span className="font-sans text-[11px] font-bold">OpenAI API Key Ativa</span>
@@ -572,7 +594,7 @@ export default function SettingsPage() {
                           </div>
                         )
                       ) : (
-                        deepseekKey ? (
+                        (deepseekKey || deepseekConfigured) ? (
                           <div className="flex items-center gap-2 p-2.5 bg-emerald-500/10 text-emerald-500 rounded-xl">
                             <Check size={14} className="shrink-0" />
                             <span className="font-sans text-[11px] font-bold">DeepSeek API Key Ativa</span>
@@ -620,7 +642,7 @@ export default function SettingsPage() {
                             name="model"
                             value="whisper-1"
                             checked={model === "whisper-1"}
-                            onChange={(e) => setModel(e.target.value)}
+                            onChange={(e) => setModel(e.target.value as AsrModel)}
                             className="mt-0.5 accent-primary-500"
                           />
                           <div className="text-left">
@@ -639,7 +661,7 @@ export default function SettingsPage() {
                             name="model"
                             value="deepseek-asr"
                             checked={model === "deepseek-asr"}
-                            onChange={(e) => setModel(e.target.value)}
+                            onChange={(e) => setModel(e.target.value as AsrModel)}
                             className="mt-0.5 accent-primary-500"
                           />
                           <div className="text-left">
@@ -661,7 +683,7 @@ export default function SettingsPage() {
                           <div className="relative">
                             <input
                               type={showOpenaiKey ? "text" : "password"}
-                              placeholder="sk-proj-..."
+                              placeholder={openaiConfigured ? "•••• configurada — digite para substituir" : "sk-proj-..."}
                               value={openaiKey}
                               onChange={(e) => setOpenaiKey(e.target.value)}
                               className="w-full bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl pl-4 pr-10 py-3 text-xs focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/10 transition-all font-mono"
@@ -687,7 +709,7 @@ export default function SettingsPage() {
                           <div className="relative">
                             <input
                               type={showDeepseekKey ? "text" : "password"}
-                              placeholder="sk-..."
+                              placeholder={deepseekConfigured ? "•••• configurada — digite para substituir" : "sk-..."}
                               value={deepseekKey}
                               onChange={(e) => setDeepseekKey(e.target.value)}
                               className="w-full bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl pl-4 pr-10 py-3 text-xs focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/10 transition-all font-mono"
@@ -732,7 +754,7 @@ export default function SettingsPage() {
                         className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 rounded-2xl flex items-center gap-2.5"
                       >
                         <Check size={16} className="shrink-0" />
-                        <span className="font-sans text-xs font-bold">Todas as configurações foram gravadas e salvas com sucesso!</span>
+                        <span className="font-sans text-xs font-bold">Preferências salvas. Em produção, o modelo fica salvo neste navegador e será usado nos próximos jobs.</span>
                       </motion.div>
                     )}
 

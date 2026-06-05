@@ -197,11 +197,21 @@ Este arquivo registra todas as alterações, inicializações e modificações r
   - Envio (push) de todas as correções para o repositório remoto.
 - **Status:** Compilado, testado e sincronizado com sucesso no repositório remoto.
 
+### [2026-06-05] - Simplificação: Remoção da Landing Page e Redirect Direto
 
+- **Tarefa:** Remover a tela inicial de marketing ("Transforme seus vídeos em contexto textual pesquisável") já que o app é de uso pessoal, e redirecionar direto para a tela de nova transcrição.
+- **Modificações:**
+  - Substituição completa de [app/page.tsx](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/page.tsx) (177 linhas de hero, features e stats) por um `redirect("/jobs/new")` do Next.js (~5 linhas). Isso eliminou dependências desnecessárias de `framer-motion`, `lucide-react` (Video, Sparkles, Download, FileText, Clock, Shield, ArrowRight, TrendingUp) e `Link` que só existiam para essa página.
+  - Atualização de [components/AppLayout.tsx](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/components/AppLayout.tsx) para alterar os links do logo (header mobile e sidebar desktop) de `href="/"` para `href="/jobs/new"`, evitando redirect desnecessário ao clicar no logo.
+- **Status:** Alterações concluídas. App agora inicia direto em "Novo Trabalho".
 
+### [2026-06-05] - Usabilidade: Botões de Cópia Rápida nas Transcrições
 
-
-
-
-
-
+- **Tarefa:** Adicionar um botão de cópia simples e rápida nas caixas de texto de transcrição (bruta e corrigida por IA) para evitar a seleção manual de textos longos.
+- **Modificações:**
+  - Importação de `Copy`, `Check` do `lucide-react` e `useCallback` do `React` na página do trabalho [app/jobs/[id]/page.tsx](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/jobs/[id]/page.tsx).
+  - Implementação da função utilitária `handleCopy` com recurso nativo `navigator.clipboard` e fallback para navegadores legados (criação e seleção de elemento dinâmico `textarea` em memória).
+  - Modificação do componente local `TextPanel` em [app/jobs/[id]/page.tsx](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/jobs/[id]/page.tsx) para renderizar opcionalmente o botão de cópia em seu header (integrado ao painel "Transcrição Bruta").
+  - Modificação do cabeçalho do painel "Revisada por IA" em [app/jobs/[id]/page.tsx](file:///c:/Users/felip/Desktop/N8N/Atigra/trans/app/jobs/[id]/page.tsx) para renderizar condicionalmente o botão de cópia se o texto pós-processado por IA estiver disponível.
+  - Adicionado feedback visual dinâmico que exibe o ícone de confirmação `Check` na cor verde por 2 segundos após a ação de cópia.
+- **Status:** Alterações concluídas com sucesso.

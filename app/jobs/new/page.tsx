@@ -3,11 +3,14 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { createClient } from "@supabase/supabase-js";
+import { getLocalPreferences } from "@/lib/localPreferences";
+import { getErrorMessage } from "@/lib/jobPreferences";
 import { Youtube } from "@/components/YoutubeIcon";
 import { 
   Upload, 
   ArrowRight, 
-  File, 
+  File as FileIcon, 
   AlertCircle, 
   Loader2,
   Clock,
@@ -37,18 +40,12 @@ export default function NewJobPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState("");
+  const [uploadStage, setUploadStage] = useState("");
 
   const [recentJobs, setRecentJobs] = useState<RecentJob[]>([]);
   const [loadingRecent, setLoadingRecent] = useState(true);
 
-  // Buscar trabalhos recentes
-  useEffect(() => {
-    fetchRecentJobs();
-    const interval = setInterval(fetchRecentJobs, 5000); // Polling leve para ver progresso dos recentes
-    return () => clearInterval(interval);
-  }, []);
-
-  const fetchRecentJobs = async () => {
+  async function fetchRecentJobs() {
     try {
       const res = await fetch("/api/jobs");
       const data = await res.json();
@@ -60,6 +57,102 @@ export default function NewJobPage() {
     } finally {
       setLoadingRecent(false);
     }
+  }
+
+  // Buscar trabalhos recentes
+  useEffect(() => {
+    const refresh = () => {
+      void fetchRecentJobs();
+    };
+    const initialLoad = setTimeout(refresh, 0);
+    const interval = setInterval(refresh, 5000); // Polling leve para ver progresso dos recentes
+    return () => {
+      clearTimeout(initialLoad);
+      clearInterval(interval);
+    };
+  }, []);
+
+  const extractAudioFile = (videoFile: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement("video");
+      const objectUrl = URL.createObjectURL(videoFile);
+      const chunks: BlobPart[] = [];
+      let recorder: MediaRecorder | null = null;
+      let audioContext: AudioContext | null = null;
+
+      const cleanup = () => {
+        URL.revokeObjectURL(objectUrl);
+        video.pause();
+        video.src = "";
+        audioContext?.close().catch(() => undefined);
+      };
+
+      video.preload = "auto";
+      video.playsInline = true;
+      video.src = objectUrl;
+
+      video.ontimeupdate = () => {
+        if (Number.isFinite(video.duration) && video.duration > 0) {
+          setUploadProgress(Math.min(70, Math.max(5, Math.round((video.currentTime / video.duration) * 70))));
+        }
+      };
+
+      video.onerror = () => {
+        cleanup();
+        reject(new Error("Não foi possível ler o vídeo no navegador."));
+      };
+
+      video.onloadedmetadata = async () => {
+        try {
+          const AudioContextConstructor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+          if (!AudioContextConstructor) {
+            throw new Error("Seu navegador não suporta extração local de áudio. Tente Chrome/Edge ou use link do YouTube.");
+          }
+
+          audioContext = new AudioContextConstructor();
+          await audioContext.resume();
+
+          const source = audioContext.createMediaElementSource(video);
+          const destination = audioContext.createMediaStreamDestination();
+          source.connect(destination);
+
+          const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+            ? "audio/webm;codecs=opus"
+            : "audio/webm";
+
+          recorder = new MediaRecorder(destination.stream, {
+            mimeType,
+            audioBitsPerSecond: 32000
+          });
+
+          recorder.ondataavailable = (event) => {
+            if (event.data.size > 0) chunks.push(event.data);
+          };
+
+          recorder.onerror = () => {
+            cleanup();
+            reject(new Error("Falha ao gravar o áudio extraído."));
+          };
+
+          recorder.onstop = () => {
+            cleanup();
+            const audioBlob = new Blob(chunks, { type: "audio/webm" });
+            const baseName = videoFile.name.replace(/\.[^/.]+$/, "");
+            resolve(new File([audioBlob], `${baseName}.webm`, { type: "audio/webm" }));
+          };
+
+          video.onended = () => {
+            if (recorder?.state === "recording") recorder.stop();
+          };
+
+          recorder.start(1000);
+          await video.play();
+        } catch (error) {
+          cleanup();
+          reject(error);
+        }
+      };
+    });
   };
 
   // Validar URL do YouTube
@@ -68,9 +161,6 @@ export default function NewJobPage() {
       setYtUrlError("");
       return false;
     }
-    const regExp = /^(?:https?:\/\/)?(?:www\.)?(?: Morocco\.com|youtube\.com|youtu\.be)\/(?:watch\?v=([^#\&\?]*)|embed\/([^#\&\?]*)|v\/([^#\&\?]*)|([^#\&\?]*))/i;
-    const match = url.match(regExp);
-    
     // Verificação simples de domínios youtube ou youtu.be
     const hasDomain = url.includes("youtube.com") || url.includes("youtu.be");
     
@@ -139,6 +229,7 @@ export default function NewJobPage() {
     setUploadError("");
 
     try {
+      const preferences = getLocalPreferences();
       const res = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -146,6 +237,8 @@ export default function NewJobPage() {
           name: "Vídeo do YouTube",
           sourceType: "youtube",
           sourceUrl: ytUrl,
+          asrModel: preferences.asrModel,
+          language: preferences.language,
           duration: 0
         })
       });
@@ -158,7 +251,7 @@ export default function NewJobPage() {
         setUploadError(data.error || "Ocorreu um erro ao criar o job.");
         setUploading(false);
       }
-    } catch (e) {
+    } catch {
       setUploadError("Erro de conexão com o servidor.");
       setUploading(false);
     }
@@ -170,58 +263,62 @@ export default function NewJobPage() {
 
     setUploading(true);
     setUploadError("");
-    setUploadProgress(10);
+    setUploadStage("Extraindo áudio no navegador...");
+    setUploadProgress(5);
 
     try {
-      // 1. Fazer upload do arquivo de vídeo
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-
-      // Usar XHR para monitorar progresso de upload
-      const uploadPromise = new Promise<{ success: boolean; path: string; error?: string }>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", "/api/upload", true);
-
-        xhr.upload.onprogress = (event) => {
-          if (event.lengthComputable) {
-            const percentComplete = Math.round((event.loaded / event.total) * 80) + 10; // Deixar 10% para criação do job
-            setUploadProgress(percentComplete);
-          }
-        };
-
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              resolve(response);
-            } catch (e) {
-              reject(new Error("Resposta inválida do servidor"));
-            }
-          } else {
-            reject(new Error("Falha no upload"));
-          }
-        };
-
-        xhr.onerror = () => reject(new Error("Erro de conexão durante upload"));
-        xhr.send(formData);
-      });
-
-      const uploadResult = await uploadPromise;
-
-      if (!uploadResult.success) {
-        throw new Error(uploadResult.error || "Erro ao realizar upload do arquivo.");
+      const preferences = getLocalPreferences();
+      // 1. Extrair e comprimir o áudio no navegador. O vídeo original nunca é enviado.
+      const audioFile = await extractAudioFile(selectedFile);
+      const maxUploadSizeMb = Number(process.env.NEXT_PUBLIC_MAX_UPLOAD_SIZE_MB || "50");
+      const maxUploadSizeBytes = maxUploadSizeMb * 1024 * 1024;
+      if (audioFile.size > maxUploadSizeBytes) {
+        throw new Error(`Áudio extraído ainda ficou grande demais (${(audioFile.size / (1024 * 1024)).toFixed(2)} MB). O limite atual é ${maxUploadSizeMb} MB.`);
       }
 
+      setUploadStage("Enviando áudio extraído...");
+      setUploadProgress(75);
+
+      // 2. Preparar URL assinada no backend e enviar apenas o áudio direto ao Supabase.
+      const signRes = await fetch("/api/upload/sign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: audioFile.name, contentType: audioFile.type, fileSize: audioFile.size })
+      });
+      const uploadResult = await signRes.json();
+
+      if (!uploadResult.success) {
+        throw new Error(uploadResult.error || "Erro ao preparar upload do arquivo.");
+      }
+
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!supabaseUrl || !supabaseAnonKey) {
+        throw new Error("Supabase não configurado no frontend.");
+      }
+
+      const supabase = createClient(supabaseUrl, supabaseAnonKey);
+      const { error: uploadError } = await supabase.storage
+        .from("videos")
+        .uploadToSignedUrl(uploadResult.storagePath, uploadResult.token, audioFile);
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      setUploadStage("Criando transcrição...");
       setUploadProgress(95);
 
-      // 2. Criar o job no banco de dados com a URL pública
+      // 3. Criar o job no banco de dados apontando para o áudio extraído.
       const jobRes = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: selectedFile.name,
           sourceType: "upload",
-          sourceUrl: uploadResult.path,
+          sourceUrl: uploadResult.storagePath,
+          asrModel: preferences.asrModel,
+          language: preferences.language,
           duration: 0
         })
       });
@@ -234,10 +331,11 @@ export default function NewJobPage() {
         throw new Error(jobData.error || "Erro ao iniciar o job.");
       }
 
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      setUploadError(e.message || "Erro no processamento do upload.");
+      setUploadError(getErrorMessage(e, "Erro no processamento do upload."));
       setUploading(false);
+      setUploadStage("");
       setUploadProgress(0);
     }
   };
@@ -341,7 +439,7 @@ export default function NewJobPage() {
                       <div className="absolute inset-0 rounded-full border-4 border-t-primary-500 animate-spin"></div>
                     </div>
                     <div className="space-y-2">
-                      <p className="font-sans font-bold text-lg">Enviando arquivo...</p>
+                      <p className="font-sans font-bold text-lg">{uploadStage || "Processando arquivo..."}</p>
                       <p className="font-sans text-xs text-neutral-400 truncate">{selectedFile?.name}</p>
                     </div>
                     {/* Progress Bar */}
@@ -363,7 +461,7 @@ export default function NewJobPage() {
                 ) : selectedFile ? (
                   <div className="space-y-4">
                     <div className="p-4 bg-primary-500/10 text-primary-500 rounded-2xl inline-block">
-                      <File size={36} />
+                      <FileIcon size={36} />
                     </div>
                     <div>
                       <p className="font-sans font-bold text-lg text-neutral-900 dark:text-white max-w-md truncate mx-auto">
@@ -521,7 +619,7 @@ export default function NewJobPage() {
                       {job.source_type === "youtube" ? (
                         <Youtube size={14} className="text-danger-500" />
                       ) : (
-                        <File size={14} className="text-primary-500" />
+                        <FileIcon size={14} className="text-primary-500" />
                       )}
                       {job.source_type}
                     </span>
